@@ -1,0 +1,216 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: peak
+objects:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: peakweb
+    labels:
+      app: peak
+  spec:
+    selector:
+      peak: web
+    ports:
+      - name: peakweb
+        port: 8080
+        protocol: TCP
+        targetPort: 8080
+
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: peakorc
+    labels:
+      app: peak
+  spec:
+    selector:
+      peak: orc
+    ports:
+      - name: peakorc
+        port: 8080
+        protocol: TCP
+        targetPort: 8080
+
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: peakweb
+    labels:
+      app: peak
+  spec:
+    to:
+      kind: Service
+      name: peakweb
+    port:
+      targetPort: peakweb
+
+- apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    name: peak
+    labels:
+      app: peak
+
+- apiVersion: v1
+  groupNames: null
+  kind: RoleBinding
+  metadata:
+    name: peak
+    labels:
+      app: peak
+  roleRef:
+    name: admin
+  subjects:
+  - kind: ServiceAccount
+    name: peak
+
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: peak
+      peak: orc
+    name: peakorc
+  spec:
+    replicas: 1
+    selector:
+      deploymentconfig: peakorc
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: peak
+          peak: orc
+          deploymentconfig: peakorc
+      spec:
+        serviceAccount: peak
+        serviceAccountName: peak
+        containers:
+        - env:
+          - name: STATUS_URI
+            value: http://peakorc:8080
+          - name: PEAKDB_HOST
+            value: postgresql
+          - name: PEAKDB_USER
+            valueFrom:
+              secretKeyRef:
+                key: database-user
+                name: postgresql
+          - name: PEAKDB_PASS
+            valueFrom:
+              secretKeyRef:
+                key: database-password
+                name: postgresql
+          image: ''
+          imagePullPolicy: Always
+          name: peakorc
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+        restartPolicy: Always
+        schedulerName: default-scheduler
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - peakorc
+        from:
+          kind: ImageStreamTag
+          name: peakorc:latest
+          namespace: peak
+      type: ImageChange
+    - type: ConfigChange
+
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: peak
+      peak: web
+    name: peakweb
+  spec:
+    replicas: 1
+    selector:
+      deploymentconfig: peakweb
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          app: peak
+          peak: web
+          deploymentconfig: peakweb
+      spec:
+        containers:
+        - livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c 
+                - echo OK
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            timeoutSeconds: 2
+
+          env:
+          - name: PEAKORC
+            value: http://peakorc:8080
+          image: ''
+          imagePullPolicy: IfNotPresent
+          name: peakweb
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+        restartPolicy: Always
+        schedulerName: default-scheduler
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - peakweb
+        from:
+          kind: ImageStreamTag
+          name: peakweb:latest
+          namespace: peak
+      type: ImageChange
+    - type: ConfigChange
