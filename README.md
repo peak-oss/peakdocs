@@ -39,7 +39,9 @@ Access Grafana, and enter the default credentials `admin/admin` when prompted. C
 ![grafana_login](https://i.imgur.com/iu3hXqO.png)
 
 Select `Add datasource` from the home screen, and enter the following:
+
 Key | Value
+--- | ---
 Name | influxdb
 Type | InfluxDB
 URL | http://influxdb:8086
