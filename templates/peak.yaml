@@ -2,6 +2,26 @@ apiVersion: v1
 kind: Template
 metadata:
   name: peak
+  annotationns:
+    "openshift.io/display-name": peak
+    description: |
+      Peak API Testing Suite
+    tags: "api,testing,peak"
+parameters:
+- name: GRAFANA_IMAGE
+  displayName: Grafana Image
+  description: The location of the grafana image
+  value: grafana/grafana:latest
+  required: true
+- name: GRAFANA_VOLUME_CAPACITY
+  displayName: Volume Capacity for Grafana storage
+  description: Volume space available for data, e.g. 512Mi, 2Gi.
+  value: 1Gi
+  required: true
+- name: PEAKTEST_IMAGE
+  description: The image used for peak testing
+  value: docker.io/peakapi/peaktest:latest
+  required: true
 objects:
 - apiVersion: v1
   kind: Service
@@ -34,6 +54,36 @@ objects:
         targetPort: 8080
 
 - apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      name: grafana
+    name: grafana
+  spec:
+    ports:
+    - name: grafana
+      port: 3000
+      protocol: TCP
+      targetPort: 3000
+    selector:
+      app: grafana
+
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      name: influxdb
+    name: influxdb
+  spec:
+    ports:
+    - name: influxdb
+      port: 8086
+      protocol: TCP
+      targetPort: 8086
+    selector:
+      app: influxdb
+
+- apiVersion: v1
   kind: Route
   metadata:
     name: peakweb
@@ -45,6 +95,17 @@ objects:
       name: peakweb
     port:
       targetPort: peakweb
+
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: grafana
+  spec:
+    to:
+      kind: Service
+      name: grafana
+    port:
+      targetPort: grafana
 
 - apiVersion: v1
   kind: ServiceAccount
@@ -99,10 +160,12 @@ objects:
         serviceAccountName: peak
         containers:
         - env:
-          - name: STATUS_URI
-            value: http://peakorc:8080
           - name: PEAKDB_HOST
             value: postgresql
+          - name: INFLUX_URL
+            value: http://influxdb:8086
+          - name: PEAKTEST_IMG
+            value: ${PEAKTEST_IMAGE}
           - name: PEAKDB_USER
             valueFrom:
               secretKeyRef:
@@ -139,6 +202,138 @@ objects:
           namespace: peak
       type: ImageChange
     - type: ConfigChange
+
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: grafana
+    name: grafana
+  spec:
+    replicas: 1
+    selector:
+      app: grafana
+      deploymentconfig: grafana
+    template:
+      metadata:
+        labels:
+          app: grafana
+          deploymentconfig: grafana
+        name: grafana
+      spec:
+        containers:
+        - name: grafana
+          image: ${GRAFANA_IMAGE}
+          securityContext:
+            runAsUser: 0
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /login
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /login
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          volumeMounts:
+          - mountPath: /var/lib/grafana
+            name: grafana-lib-volume
+        restartPolicy: Always
+        volumes:
+        - name: grafana-lib-volume
+          persistentVolumeClaim:
+            claimName: grafana-lib-pvc
+            readOnly: false
+
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftWebConsole
+    creationTimestamp: null
+    generation: 1
+    labels:
+      app: influxdb
+    name: influxdb
+  spec:
+    replicas: 1
+    selector:
+      app: influxdb
+      deploymentconfig: influxdb
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        annotations:
+          openshift.io/generated-by: OpenShiftWebConsole
+        creationTimestamp: null
+        labels:
+          app: influxdb
+          deploymentconfig: influxdb
+      spec:
+        containers:
+        - image: docker.io/library/influxdb@sha256:9b8cdb0b088601ff6346acd90d2ba95a7032c43554c1f7658f2d8b14b8d496ed
+          imagePullPolicy: IfNotPresent
+          name: influxdb
+          ports:
+          - containerPort: 8086
+            protocol: TCP
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /var/lib/influxdb
+            name: influxdb-1
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - emptyDir: {}
+          name: influxdb-1
+    test: false
+    triggers:
+    - type: ConfigChange
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - influxdb
+        from:
+          kind: ImageStreamTag
+          name: influxdb:1.6.4-alpine
+          namespace: myproject
+      type: ImageChange
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: grafana-lib-pvc
+  spec:
+    accessModes:
+    - ReadWriteMany
+    resources:
+      requests:
+        storage: "${GRAFANA_VOLUME_CAPACITY}"
 
 - apiVersion: v1
   kind: DeploymentConfig
@@ -214,3 +409,105 @@ objects:
           namespace: peak
       type: ImageChange
     - type: ConfigChange
+
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftWebConsole
+    creationTimestamp: null
+    labels:
+      app: peakweb
+    name: peakweb
+  spec:
+    nodeSelector: null
+    output:
+      to:
+        kind: ImageStreamTag
+        name: peakweb:latest
+    postCommit: {}
+    resources: {}
+    runPolicy: Serial
+    source:
+      git:
+        ref: master
+        uri: https://github.com/peak-oss/peakweb
+      type: Git
+    strategy:
+      sourceStrategy:
+        from:
+          kind: ImageStreamTag
+          name: python:3.6
+          namespace: openshift
+      type: Source
+    triggers:
+    - imageChange: {}
+      type: ImageChange
+    - type: ConfigChange
+    - generic:
+        secret: 9e97ae08607b0901
+      type: Generic
+    - github:
+        secret: f6d3dd2e4b3dea46
+      type: GitHub
+  status:
+    lastVersion: 0
+
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftWebConsole
+    creationTimestamp: null
+    labels:
+      app: peakorc
+    name: peakorc
+  spec:
+    nodeSelector: null
+    output:
+      to:
+        kind: ImageStreamTag
+        name: peakorc:latest
+    postCommit: {}
+    resources: {}
+    runPolicy: Serial
+    source:
+      git:
+        ref: master
+        uri: https://github.com/peak-oss/peakorc.git
+      type: Git
+    strategy:
+      sourceStrategy:
+        from:
+          kind: ImageStreamTag
+          name: python:3.6
+          namespace: openshift
+      type: Source
+    triggers:
+    - imageChange: {}
+      type: ImageChange
+    - type: ConfigChange
+    - generic:
+        secret: f7dd89a76cf76886
+      type: Generic
+    - github:
+        secret: b6de707f1e23a4cf
+      type: GitHub
+  status:
+    lastVersion: 0
+
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    labels:
+      app: peakweb
+    name: peakweb
+  spec: {}
+
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    labels:
+      app: peakorc
+    name: peakorc
+  spec: {}
