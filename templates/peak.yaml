@@ -19,9 +19,15 @@ parameters:
   value: 1Gi
   required: true
 - name: PEAKTEST_IMAGE
+  displayName: Core Peak testing image
   description: The image used for peak testing
   value: docker.io/peakapi/peaktest:latest
   required: true
+- name: FLASK_SECRET
+  displayName: Flask secret key
+  description: Flask secret key
+  generate: expression
+  from: "[a-zA-Z0-9]{24}"
 objects:
 - apiVersion: v1
   kind: Service
@@ -126,6 +132,14 @@ objects:
   subjects:
   - kind: ServiceAccount
     name: peak
+
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: flask
+  type: Opaque 
+  stringData: 
+    flask-secret-key: ${FLASK_SECRET}
 
 - apiVersion: v1
   kind: DeploymentConfig
@@ -355,6 +369,11 @@ objects:
           env:
           - name: PEAKORC
             value: http://peakorc:8080
+          - name: FLASK_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: flask-secret-key
+                name: flask
           image: ''
           imagePullPolicy: IfNotPresent
           name: peakweb
