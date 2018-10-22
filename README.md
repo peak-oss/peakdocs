@@ -31,11 +31,7 @@ oc new-app -f templates/peak.yaml
 
 Peak uses a custom Grafana dashboard to display metrics, and the following steps show you how to configure Grafana.
 
-Firstly, create an InfluxDB database `peakdb`. Run the following from one of the terminals that can access the internal DNS:
-```
-curl -i -XPOST http://influxdb:8086/query --data-urlencode "q=CREATE DATABASE peakdb"
-```
-Access Grafana, and enter the default credentials `admin/admin` when prompted. Create a new, secure password when prompted
+Access the Grafana URL, and enter the default credentials `admin/admin` when prompted. Create a new, secure password when prompted
 ![grafana_login](https://i.imgur.com/iu3hXqO.png)
 
 Select `Add datasource` from the home screen, and enter the following:

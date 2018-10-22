@@ -273,7 +273,10 @@ objects:
           deploymentconfig: influxdb
       spec:
         containers:
-        - image: docker.io/library/influxdb@sha256:9b8cdb0b088601ff6346acd90d2ba95a7032c43554c1f7658f2d8b14b8d496ed
+        - env:
+          - name: INFLUXDB_DB
+            value: peakdb
+          image: docker.io/library/influxdb@sha256:9b8cdb0b088601ff6346acd90d2ba95a7032c43554c1f7658f2d8b14b8d496ed
           imagePullPolicy: IfNotPresent
           name: influxdb
           ports:
