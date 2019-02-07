@@ -18,13 +18,9 @@ Deploy a PostgreSQL database for the peak API service:
 ```
 oc new-app postgresql-persistent -p POSTGRESQL_DATABASE=peakdb -p VOLUME_CAPACITY=1Gi -p POSTGRESQL_VERSION=9.6
 ```
-Clone this repo:
+Create app components from the template:
 ```
-git clone https://github.com/peak-oss/peakdocs
-```
-... and create resources with the template:
-```
-oc new-app -f templates/peak.yaml
+oc new-app -f <(curl https://raw.githubusercontent.com/peak-oss/peakdocs/master/templates/peak.yaml)
 ```
 
 ## Grafana configuration
