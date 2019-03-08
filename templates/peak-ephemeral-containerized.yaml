@@ -1,0 +1,419 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: peak
+  annotationns:
+    "openshift.io/display-name": peak
+    description: |
+      Peak API Testing Suite
+    tags: "api,testing,peak"
+parameters:
+- name: GRAFANA_IMAGE
+  displayName: Grafana Image
+  description: The location of the grafana image
+  value: grafana/grafana:latest
+  required: true
+- name: PEAKTEST_IMAGE
+  displayName: Core Peak testing image
+  description: The image used for peak testing
+  value: docker.io/peakapi/peaktest:latest
+  required: true
+- name: FLASK_SECRET
+  displayName: Flask secret key
+  description: Flask secret key
+  generate: expression
+  from: "[a-zA-Z0-9]{24}"
+objects:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: peakweb
+    labels:
+      app: peak
+  spec:
+    selector:
+      peak: web
+    ports:
+      - name: peakweb
+        port: 8080
+        protocol: TCP
+        targetPort: 8080
+
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: peakorc
+    labels:
+      app: peak
+  spec:
+    selector:
+      peak: orc
+    ports:
+      - name: peakorc
+        port: 8080
+        protocol: TCP
+        targetPort: 8080
+
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      name: grafana
+    name: grafana
+  spec:
+    ports:
+    - name: grafana
+      port: 3000
+      protocol: TCP
+      targetPort: 3000
+    selector:
+      app: grafana
+
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      name: influxdb
+    name: influxdb
+  spec:
+    ports:
+    - name: influxdb
+      port: 8086
+      protocol: TCP
+      targetPort: 8086
+    selector:
+      app: influxdb
+
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: peakweb
+    labels:
+      app: peak
+  spec:
+    to:
+      kind: Service
+      name: peakweb
+    port:
+      targetPort: peakweb
+
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: grafana
+  spec:
+    to:
+      kind: Service
+      name: grafana
+    port:
+      targetPort: grafana
+
+- apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    name: peak
+    labels:
+      app: peak
+
+- apiVersion: v1
+  groupNames: null
+  kind: RoleBinding
+  metadata:
+    name: peak
+    labels:
+      app: peak
+  roleRef:
+    name: admin
+  subjects:
+  - kind: ServiceAccount
+    name: peak
+
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: flask
+  type: Opaque 
+  stringData: 
+    flask-secret-key: ${FLASK_SECRET}
+
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: peak
+      peak: orc
+    name: peakorc
+  spec:
+    replicas: 1
+    selector:
+      deploymentconfig: peakorc
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    triggers:
+      - type: ImageChange
+        imageChangeParams:
+          automatic: true
+          containerNames:
+            - "peakorc"
+          from:
+            kind: ImageStreamTag
+            name: "peak-peakorc:latest"
+      - type: ConfigChange
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: peak
+          peak: orc
+          deploymentconfig: peakorc
+      spec:
+        serviceAccount: peak
+        serviceAccountName: peak
+        containers:
+        - env:
+          - name: PEAKDB_HOST
+            value: postgresql
+          - name: INFLUX_URL
+            value: http://influxdb:8086
+          - name: PEAKTEST_IMG
+            value: ${PEAKTEST_IMAGE}
+          - name: PEAKDB_USER
+            valueFrom:
+              secretKeyRef:
+                key: database-user
+                name: postgresql
+          - name: PEAKDB_PASS
+            valueFrom:
+              secretKeyRef:
+                key: database-password
+                name: postgresql
+          image: peak-peakorc
+          imagePullPolicy: Always
+          name: peakorc
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+        restartPolicy: Always
+        schedulerName: default-scheduler
+    
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: grafana
+    name: grafana
+  spec:
+    replicas: 1
+    selector:
+      app: grafana
+      deploymentconfig: grafana
+    template:
+      metadata:
+        labels:
+          app: grafana
+          deploymentconfig: grafana
+        name: grafana
+      spec:
+        containers:
+        - name: grafana
+          image: ${GRAFANA_IMAGE}
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /login
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /login
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+        restartPolicy: Always
+
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    generation: 1
+    labels:
+      app: influxdb
+    name: influxdb
+  spec:
+    replicas: 1
+    selector:
+      app: influxdb
+      deploymentconfig: influxdb
+    template:
+      metadata:
+        labels:
+          app: influxdb
+          deploymentconfig: influxdb
+      spec:
+        containers:
+        - env:
+          - name: INFLUXDB_DB
+            value: peakdb
+          image: docker.io/library/influxdb@sha256:9b8cdb0b088601ff6346acd90d2ba95a7032c43554c1f7658f2d8b14b8d496ed
+          imagePullPolicy: IfNotPresent
+          name: influxdb
+          ports:
+          - containerPort: 8086
+            protocol: TCP
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /var/lib/influxdb
+            name: influxdb-1
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - emptyDir: {}
+          name: influxdb-1
+
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: peak
+      peak: web
+    name: peakweb
+  spec:
+    replicas: 1
+    selector:
+      deploymentconfig: peakweb
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    triggers:
+      - type: ImageChange
+        imageChangeParams:
+          automatic: true
+          containerNames:
+            - "peakweb"
+          from:
+            kind: ImageStreamTag
+            name: "peak-peakweb:latest"
+      - type: ConfigChange
+    template:
+      metadata:
+        labels:
+          app: peak
+          peak: web
+          deploymentconfig: peakweb
+      spec:
+        containers:
+        - livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c 
+                - echo OK
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            timeoutSeconds: 2
+
+          env:
+          - name: PEAKORC
+            value: http://peakorc:8080
+          - name: FLASK_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: flask-secret-key
+                name: flask
+          image: peak-peakweb
+          imagePullPolicy: Always
+          name: peakweb
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+        restartPolicy: Always
+        schedulerName: default-scheduler
+
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    labels:
+      app: peakweb
+    name: peak-peakweb
+    annotations:
+      openshift.io/display-name: Peak Performance Testing Web UI
+      openshift.io/provider-display-name: Peak OSS
+  spec: 
+    tags:
+      - name: 'latest'
+        annotations:
+          description: Peak Web UI
+          tags: peak,peakweb
+          supports: peakweb:latest
+        from:
+          kind: DockerImage
+          name: quay.io/peak/peakweb:latest
+
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    labels:
+      app: peakorc 
+    name: peak-peakorc
+    annotations:
+      openshift.io/display-name: Peak Performance Testing API
+      openshift.io/provider-display-name: Peak OSS
+  spec: 
+    tags:
+      - name: 'latest'
+        annotations:
+          description: Peak API
+          tags: peak,peakorc
+          supports: peakorc:latest
+        from:
+          kind: DockerImage
+          name: quay.io/peak/peakorc:latest
+
