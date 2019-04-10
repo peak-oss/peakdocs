@@ -1,14 +1,20 @@
 # Peak
 
-Peak is open source software to help you manage the performance of your APIs.
+Peak is open source software to help you manage the performance of your web applications and APIs.
 
 ## How it works
 
-Peak uses containers to test the performance of your APIs. When you create a test suite, you're asked to specify the number of nodes that will be used for the test. Peak will create each node as an Alpine Linux container running in a Kubernetes pod, and each measures the response time of requests and posts the results back to an InfluxDB instance. You can then use Grafana with the Peak API dashboard to visualise your results.
+Peak uses the Kubernetes Batch API to load-test your web apps and APIs. When you create a test suite, you're asked to specify the number of nodes that will be used for the test. Peak will create each node as an Alpine Linux container running in a Kubernetes pod, and each measures the response time of requests and posts the results back to an InfluxDB instance. You can then use Grafana with the Peak dashboard to visualise your results.
 
 ## Deployment
 
-Peak provides an OpenShift template to help you get an up-and-running rapidly. 
+### Deploying Peak with the Operator Framework
+
+Peak provides an Ansible Operator that you can use to easily deploy and consume the application on OpenShift. There's a step-by-step guide to deployment provided in the [Peak Operator docs](https://github.com/peak-oss/peakoperator/blob/master/README.md#deploying-the-operator-and-crd-on-openshift).
+
+### Deploying Peak with the OpenShift template
+
+If you don't have access to the Operator Framework, Peak also provides an OpenShift template to help you get an up-and-running rapidly.
 
 Firstly, create a new OpenShift project:
 ```
@@ -23,7 +29,7 @@ Create app components from the template:
 oc new-app -f <(curl https://raw.githubusercontent.com/peak-oss/peakdocs/master/templates/peak.yaml)
 ```
 
-## Grafana configuration
+### Peak Grafana Configuration
 
 Peak uses a custom Grafana dashboard to display metrics, and the following steps show you how to configure Grafana.
 
