@@ -157,16 +157,6 @@ objects:
         timeoutSeconds: 600
         updatePeriodSeconds: 1
       type: Rolling
-    triggers:
-      - type: ImageChange
-        imageChangeParams:
-          automatic: true
-          containerNames:
-            - "peakorc"
-          from:
-            kind: ImageStreamTag
-            name: "peak-peakorc:latest"
-      - type: ConfigChange
     template:
       metadata:
         creationTimestamp: null
@@ -199,7 +189,7 @@ objects:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
-          image: peak-peakorc
+          image: ''
           imagePullPolicy: Always
           name: peakorc
           ports:
@@ -214,7 +204,17 @@ objects:
               memory: 256Mi
         restartPolicy: Always
         schedulerName: default-scheduler
-    
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - peakorc
+        from:
+          kind: ImageStreamTag
+          name: peakorc:latest
+      type: ImageChange
+    - type: ConfigChange
+
 - apiVersion: v1
   kind: DeploymentConfig
   metadata:
@@ -323,16 +323,6 @@ objects:
         timeoutSeconds: 600
         updatePeriodSeconds: 1
       type: Rolling
-    triggers:
-      - type: ImageChange
-        imageChangeParams:
-          automatic: true
-          containerNames:
-            - "peakweb"
-          from:
-            kind: ImageStreamTag
-            name: "peak-peakweb:latest"
-      - type: ConfigChange
     template:
       metadata:
         labels:
@@ -365,8 +355,8 @@ objects:
               secretKeyRef:
                 key: flask-secret-key
                 name: flask
-          image: peak-peakweb
-          imagePullPolicy: Always
+          image: ''
+          imagePullPolicy: IfNotPresent
           name: peakweb
           ports:
           - containerPort: 8080
@@ -380,44 +370,115 @@ objects:
               memory: 256Mi
         restartPolicy: Always
         schedulerName: default-scheduler
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - peakweb
+        from:
+          kind: ImageStreamTag
+          name: peakweb:latest
+      type: ImageChange
+    - type: ConfigChange
+
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftWebConsole
+    creationTimestamp: null
+    labels:
+      app: peakweb
+    name: peakweb
+  spec:
+    nodeSelector: null
+    output:
+      to:
+        kind: ImageStreamTag
+        name: peakweb:latest
+    postCommit: {}
+    resources: {}
+    runPolicy: Serial
+    source:
+      git:
+        ref: master
+        uri: https://github.com/peak-oss/peakweb
+      type: Git
+    strategy:
+      sourceStrategy:
+        from:
+          kind: ImageStreamTag
+          name: python:3.6
+          namespace: openshift
+      type: Source
+    triggers:
+    - imageChange: {}
+      type: ImageChange
+    - type: ConfigChange
+    - generic:
+        secret: 9e97ae08607b0901
+      type: Generic
+    - github:
+        secret: f6d3dd2e4b3dea46
+      type: GitHub
+  status:
+    lastVersion: 0
+
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftWebConsole
+    creationTimestamp: null
+    labels:
+      app: peakorc
+    name: peakorc
+  spec:
+    nodeSelector: null
+    output:
+      to:
+        kind: ImageStreamTag
+        name: peakorc:latest
+    postCommit: {}
+    resources: {}
+    runPolicy: Serial
+    source:
+      git:
+        ref: master
+        uri: https://github.com/peak-oss/peakorc.git
+      type: Git
+    strategy:
+      sourceStrategy:
+        from:
+          kind: ImageStreamTag
+          name: python:3.6
+          namespace: openshift
+      type: Source
+    triggers:
+    - imageChange: {}
+      type: ImageChange
+    - type: ConfigChange
+    - generic:
+        secret: f7dd89a76cf76886
+      type: Generic
+    - github:
+        secret: b6de707f1e23a4cf
+      type: GitHub
+  status:
+    lastVersion: 0
 
 - apiVersion: v1
   kind: ImageStream
   metadata:
     labels:
       app: peakweb
-    name: peak-peakweb
-    annotations:
-      openshift.io/display-name: Peak Performance Testing Web UI
-      openshift.io/provider-display-name: Peak OSS
-  spec: 
-    tags:
-      - name: 'latest'
-        annotations:
-          description: Peak Web UI
-          tags: peak,peakweb
-          supports: peakweb:latest
-        from:
-          kind: DockerImage
-          name: quay.io/peak/peakweb:latest
+    name: peakweb
+  spec: {}
 
 - apiVersion: v1
   kind: ImageStream
   metadata:
     labels:
-      app: peakorc 
-    name: peak-peakorc
-    annotations:
-      openshift.io/display-name: Peak Performance Testing API
-      openshift.io/provider-display-name: Peak OSS
-  spec: 
-    tags:
-      - name: 'latest'
-        annotations:
-          description: Peak API
-          tags: peak,peakorc
-          supports: peakorc:latest
-        from:
-          kind: DockerImage
-          name: quay.io/peak/peakorc:latest
-
+      app: peakorc
+    name: peakorc
+  spec: {}
